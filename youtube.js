@@ -6,7 +6,7 @@ function sendName() {
     let name = element.textContent;
     
     // Titles end with " - YouTube".
-    chrome.runtime.sendMessage({ name: name.slice(0, name.lastIndexOf(' - YouTube')) });
+    chrome.runtime.sendMessage({ name: name.slice(0, name.lastIndexOf(' - YouTube')), api: "yt", url: document.URL });
 }
 
 // Observe changes on the element, and send the names.

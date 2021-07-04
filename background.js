@@ -36,19 +36,62 @@ function stringToUrl(s) {
   return URL.createObjectURL(new Blob([s], {type: "text/plain"}));
 }
 
+function getytid(url) {
+  var r, rx = /^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]*).*/;
+
+  r = url.match(rx);
+  return r[1];
+}
+
 // Given a name, if it's different than the last name, download it.
-function download(name, redownload) {
-  if (name !== lastName || redownload) {
+function download(tab, redownload) {
+  if(typeof tab === 'string'){
+    var name = tab;
+  }
+  else {
+  var name = tab.name;
+  }
+
+  if (name  !== lastName || redownload) {
     lastName = name;
 
     // Interpolate the format.
     let formatted = nameFormat.replace(/\{title\}/g, name);
+    var title = formatted;
+    var artist='';
+
+    name = name.replace(/^(\([0-9]+\) )/,'')
+    nn=name.split(/[|-]+/)
+//    let r = name.match(/^(.*)- ?([\p{L}\p{M}\p{Z}\p{P}\p{N}()' ]+)[| ]?.*$/)
+    if(nn.length>1) {
+      var title=nn[0].trim();
+      var artist=nn[1].trim();
+    } 
 
     // Download the name.
-    chrome.downloads.download({url: stringToUrl(formatted), filename: 'currentsong.txt', conflictAction: 'overwrite'}, (downloadId) => {
+    // console.log("track: "+ title)
+    chrome.downloads.download({url: stringToUrl(title), filename: 'Snip_Track.txt', conflictAction: 'overwrite'}, (downloadId) => {
       // Erase the download record, to not spam the user's downloads list.
       chrome.downloads.erase({id: downloadId});
     });
+
+    if(artist != '') {
+      // console.log("artist: "+artist)
+      chrome.downloads.download({url: stringToUrl(artist), filename: 'Snip_Artist.txt', conflictAction: 'overwrite'}, (downloadId) => {
+        // Erase the download record, to not spam the user's downloads list.
+        chrome.downloads.erase({id: downloadId});
+      });  
+    }
+
+    if(tab.api == "yt"){
+      id = getytid(tab.url);
+      // Download thumbnail.
+      // console.log("thumb: "+"https://img.youtube.com/vi/"+id+"/mqdefault.jpg")
+      chrome.downloads.download({url: "https://img.youtube.com/vi/"+id+"/mqdefault.jpg", filename: 'Snip_Artwork.jpg', conflictAction: 'overwrite'}, (downloadId) => {
+        // Erase the download record, to not spam the user's downloads list.
+        chrome.downloads.erase({id: downloadId});
+      });
+    }
   }
 }
 
@@ -56,7 +99,7 @@ function download(name, redownload) {
 function update() {
   for (let tab of tabs.values()) {
     if (tab.name !== '' && tab.audible) {
-      download(tab.name);
+      download(tab);
       return;
     }
   }
@@ -85,7 +128,7 @@ function add(id, url, audible) {
   let script = getScript(url);
 
   if (script && !tabs.has(id)) {
-    tabs.set(id, {name: '', audible: audible || false});
+    tabs.set(id, {name: '', audible: audible || false, url: url});
 
     chrome.tabs.executeScript(id, {file: script, runAt: "document_end"});
 
@@ -106,15 +149,18 @@ function remove(id) {
 
 
 // Set the name of a tracked tab.
-function setName(id, name) {
+function setTab(id, ntab) {
   let tab = tabs.get(id);
 
   if (tab) {
-    tab.name = name;
+    tab.name = ntab.name;
+    tab.api = ntab.api;
+    tab.url = ntab.url;
 
     update();
   }
 }
+
 
 // Set the audible state of a tracked tab.
 function setAudible(id, audible) {
@@ -127,9 +173,18 @@ function setAudible(id, audible) {
   }
 }
 
+function setURL(id, url) {
+  let tab = tabs.get(id);
+
+  if (tab) {
+    tab.url = url;
+  }
+}
+
+
 // Listen to name changes from the scripts running on the sites.
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  setName(sender.tab.id, request.name);
+  setTab(sender.tab.id, request);
 });
 
 // Listen to tab updates.
@@ -144,6 +199,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       add(tabId, tab.url);
     }
   } else if (changeInfo.audible !== undefined) {
+    setURL(tabId, tab.url);
     setAudible(tabId, changeInfo.audible);
   } else if (changeInfo.status === 'loading') {
     remove(tabId);
